@@ -4,12 +4,16 @@ install.packages("tidyverse")
 install.packages("tidymodels")
 install.packages("rpart")
 install.packages("vroom")
+install.packages("bonsai")
+install.packages("lightgbm")
 library(tidyverse)
 library(tidymodels)
 library(dplyr)
 library(rpart)
 library(vroom)
 library(ranger)
+library(bonsai)
+library(lightgbm)
 
 train_data <- vroom("data/train.csv") %>%
   select(-casual, -registered)
@@ -99,10 +103,10 @@ my_recipe <- recipe(count ~ . ,data = train_data) %>%
 # ===============================================================
 # GROW REGRESSION TREE
 # ===============================================================
-my_mod <- rand_forest(mtry = tune()
-                      ,min_n = tune()
-                      ,trees = 500) %>%
-  set_engine("ranger") %>%
+boost_model <- boost_tree(tree_depth = tune()
+                          ,trees = tune()
+                          ,learn_rate = tune()) %>%
+  set_engine("lightgbm") %>%
   set_mode("regression")
 
 # ===============================================================
@@ -112,18 +116,16 @@ my_mod <- rand_forest(mtry = tune()
 # Establish a workflow
 wf <- workflow() %>%
   add_recipe(my_recipe) %>%
-  add_model(my_mod)
+  add_model(boost_model)
 
 # Create the parameter set automatically from the workflow and build a grid
 param_set <- tune::extract_parameter_set_dials(wf)
 
 # set grid
-grid <- grid_regular(mtry(range = c(1,9))
-                          ,min_n()
-                          ,levels = 5)
+grid <- grid_regular(tree_depth() ,trees() ,learn_rate() ,levels = 2)
 
 # Split data for Cross Validation
-folds <- vfold_cv(train_data ,v = 2 ,repeats = 1)
+folds <- vfold_cv(train_data ,v = 4 ,repeats = 1)
 
 metrics_spec <- yardstick::metric_set(rmse)
 
@@ -155,4 +157,4 @@ kaggle_submission <- test_predictions %>%
   mutate(datetime = as.character(format(datetime)))
 
 # Write to CSV file
-vroom_write(x = kaggle_submission, file = "./Rand_Forest_Predictions.csv", delim = ",")
+vroom_write(x = kaggle_submission, file = "./Boost_Predictions.csv", delim = ",")

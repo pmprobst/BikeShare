@@ -122,10 +122,10 @@ param_set <- parameters(
 )
 
 # set grid
-grid <- grid_regular(param_set, levels = 2)
+grid <- grid_regular(param_set, levels = 5)
 
 # Split data for Cross Validation
-folds <- vfold_cv(train_data ,v = 2 ,repeats = 1)
+folds <- vfold_cv(train_data ,v = 10 ,repeats = 1)
 
 metrics_spec <- yardstick::metric_set(rmse, rsq)
 
