@@ -9,7 +9,7 @@ library(tidymodels)
 library(dplyr)
 library(rpart)
 library(vroom)
-library(ranger)
+
 
 train_data <- vroom("data/train.csv") %>%
   select(-casual, -registered)
@@ -19,7 +19,7 @@ test_data <- vroom("data/test.csv")
 # DATA CLEANING
 # ===============================================================
 
-my_recipe <- recipe(count ~ . ,data = train_data) %>%
+my_recipe <- recipe(count ~ ., data = train_data) %>%
   step_log(count, offset = 1, skip = TRUE) %>%
   # Recode weather "4" to "3" (combine rare weather conditions)
   step_mutate(weather = ifelse(weather == 4, 3, weather)) %>%
@@ -99,10 +99,10 @@ my_recipe <- recipe(count ~ . ,data = train_data) %>%
 # ===============================================================
 # GROW REGRESSION TREE
 # ===============================================================
-my_mod <- rand_forest(mtry = tune()
-                      ,min_n = tune()
-                      ,trees = 500) %>%
-  set_engine("ranger") %>%
+my_mod <- decision_tree(tree_depth = tune(),
+                        cost_complexity = tune(),
+                        min_n = tune()) %>%
+  set_engine("rpart") %>%
   set_mode("regression")
 
 # ===============================================================
@@ -115,19 +115,21 @@ wf <- workflow() %>%
   add_model(my_mod)
 
 # Create the parameter set automatically from the workflow and build a grid
-param_set <- tune::extract_parameter_set_dials(wf)
+param_set <- parameters(
+  tree_depth(range = c(3L, 15L)),
+  cost_complexity(range = c(-6, -4)),  # 1e-6 to 1e-4
+  min_n(range = c(2L, 40L))
+)
 
 # set grid
-grid <- grid_regular(mtry(range = c(1,9))
-                          ,min_n()
-                          ,levels = 5)
+grid <- grid_regular(param_set, levels = 2)
 
 # Split data for Cross Validation
 folds <- vfold_cv(train_data ,v = 2 ,repeats = 1)
 
-metrics_spec <- yardstick::metric_set(rmse)
+metrics_spec <- yardstick::metric_set(rmse, rsq)
 
-# grow the forest
+# Run the tree
 tuned <- tune_grid(
   wf,
   resamples = folds,
@@ -148,11 +150,11 @@ test_predictions <- predict(final_fit, new_data = test_data) %>%
 
 # Create Kaggle submission format (preserve original datetime strings)
 kaggle_submission <- test_predictions %>%
-  bind_cols(., test_data) %>%
+  bind_cols(test_data %>% select(datetime)) %>%
   select(datetime, .pred) %>%
   rename(count = .pred) %>%
   mutate(count = pmax(0, count)) %>%
-  mutate(datetime = as.character(format(datetime)))
+  mutate(datetime = as.character(datetime))
 
 # Write to CSV file
-vroom_write(x = kaggle_submission, file = "./Rand_Forest_Predictions.csv", delim = ",")
+vroom_write(x = kaggle_submission, file = "./Reg_Tree_Predictions.csv", delim = ",")
