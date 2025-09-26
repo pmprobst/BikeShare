@@ -1,13 +1,5 @@
 # BikeShare Penalized Regression Analysis
 # Load required libraries
-install.packages("tidyverse")
-install.packages("tidymodels")
-install.packages("rpart")
-install.packages("vroom")
-install.packages("bonsai")
-install.packages("lightgbm")
-install.packages("dbarts")
-install.packages("parsnip")
 library(tidyverse)
 library(tidymodels)
 library(dplyr)
@@ -16,7 +8,6 @@ library(vroom)
 library(ranger)
 library(bonsai)
 library(lightgbm)
-library(dbarts)
 library(parsnip)
 
 train_data <- vroom("data/train.csv") %>%
@@ -111,10 +102,6 @@ bart_model <- bart(trees = tune()) %>%
   set_engine("dbarts") %>%
   set_mode("regression")
 
-# ===============================================================
-# PENALIZED REGRESSION
-# ===============================================================
-
 # Establish a workflow
 wf <- workflow() %>%
   add_recipe(my_recipe) %>%
@@ -124,7 +111,7 @@ wf <- workflow() %>%
 param_set <- tune::extract_parameter_set_dials(wf)
 
 # set grid
-grid <- grid_regular(trees() ,levels = 2)
+grid <- grid_regular(trees() ,levels = 10)
 
 # Split data for Cross Validation
 folds <- vfold_cv(train_data ,v = 4 ,repeats = 1)
@@ -136,7 +123,7 @@ tuned <- tune_grid(
   wf,
   resamples = folds,
   grid = grid,
-  metrics = metrics_set(rmse)
+  metrics = metric_set(rmse)
 )
 
 autoplot(tuned)
@@ -159,4 +146,4 @@ kaggle_submission <- test_predictions %>%
   mutate(datetime = as.character(format(datetime)))
 
 # Write to CSV file
-vroom_write(x = kaggle_submission, file = "./Boost_Predictions.csv", delim = ",")
+vroom_write(x = kaggle_submission, file = "./BART_Predictions.csv", delim = ",")
