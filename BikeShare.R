@@ -1,18 +1,7 @@
 # BikeShare Penalized Regression Analysis
 # Load required libraries
 library(tidyverse)
-library(tidymodels)
-library(dplyr)
-library(rpart)
 library(vroom)
-library(ranger)
-library(bonsai)
-library(lightgbm)
-library(parsnip)
-library(agua)
-
-## Initialize an h2o session
-h2o::h2o.init()
 
 train_data <- vroom("data/train.csv") %>%
   select(-casual, -registered)
@@ -30,7 +19,7 @@ my_recipe <- recipe(count ~ . ,data = train_data) %>%
   step_time(datetime, features = "hour") %>%
   
   # Day of week
-  step_mutate(day_of_week = wday(datetime, label = TRUE)) %>%
+  step_date(datetime, features = "dow") %>%
   # Month of year
   step_mutate(month = month(datetime)) %>%
   # Weekend vs weekday
@@ -96,32 +85,13 @@ my_recipe <- recipe(count ~ . ,data = train_data) %>%
   step_nzv(all_predictors()) %>%
   # Normalize all numeric predictors to put them on the same scale
   step_normalize(all_numeric_predictors()) %>%
-  # Remove datetime column as it's not needed for modeling
-  step_rm(datetime)
+  #update date_time to ID
+  update_role(datetime, new_role = "ID")
 
+# Prep the recipe
+prepped_recipe <- prep(my_recipe, training = train_data)
 
-auto_model <- auto_ml() %>%
-  set_engine("h2o" ,max_runtime_secs = 500 ,max_models = 10) %>%
-  set_mode("regression")
+# Bake the data
+baked_data <- bake(prepped_recipe, new_data = train_data)
 
-# Establish a workflow
-wf <- workflow() %>%
-  add_recipe(my_recipe) %>%
-  add_model(auto_model) %>%
-  fit(data = train_data)
-
-
-# predict and back-transform from log1p, clip at 0
-test_predictions <- predict(wf, new_data = test_data) %>%
-  mutate(.pred = pmax(0, exp(.pred) - 1))
-
-# Create Kaggle submission format (preserve original datetime strings)
-kaggle_submission <- test_predictions %>%
-  bind_cols(., test_data) %>%
-  select(datetime, .pred) %>%
-  rename(count = .pred) %>%
-  mutate(count = pmax(0, count)) %>%
-  mutate(datetime = as.character(format(datetime)))
-
-# Write to CSV file
-vroom_write(x = kaggle_submission, file = "./H2O_Predictions.csv", delim = ",")
+vroom_write(x = baked_data, file = "./Baked_Data.csv", delim = ",")
