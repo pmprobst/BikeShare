@@ -9,6 +9,10 @@ library(ranger)
 library(bonsai)
 library(lightgbm)
 library(parsnip)
+library(agua)
+
+## Initialize an h2o session
+h2o::h2o.init()
 
 train_data <- vroom("data/train.csv") %>%
   select(-casual, -registered)
@@ -95,46 +99,20 @@ my_recipe <- recipe(count ~ . ,data = train_data) %>%
   # Remove datetime column as it's not needed for modeling
   step_rm(datetime)
 
-# ===============================================================
-# GROW REGRESSION TREE
-# ===============================================================
-bart_model <- bart(trees = tune()) %>%
-  set_engine("dbarts") %>%
+
+auto_model <- auto_ml() %>%
+  set_engine("h2o" ,max_runtime_secs = 500 ,max_models = 10) %>%
   set_mode("regression")
 
 # Establish a workflow
 wf <- workflow() %>%
   add_recipe(my_recipe) %>%
-  add_model(bart_model)
+  add_model(auto_model) %>%
+  fit(data = train_data)
 
-# Create the parameter set automatically from the workflow and build a grid
-param_set <- tune::extract_parameter_set_dials(wf)
-
-# set grid
-grid <- grid_regular(trees() ,levels = 10)
-
-# Split data for Cross Validation
-folds <- vfold_cv(train_data ,v = 4 ,repeats = 1)
-
-#metrics_spec <- yardstick::metric_set(rmse)
-
-# grow the forest
-tuned <- tune_grid(
-  wf,
-  resamples = folds,
-  grid = grid,
-  metrics = metric_set(rmse)
-)
-
-autoplot(tuned)
-
-# finalize and fit
-best_params <- select_best(tuned, metric = "rmse")
-final_wf  <- finalize_workflow(wf, best_params)
-final_fit <- fit(final_wf, data = train_data)
 
 # predict and back-transform from log1p, clip at 0
-test_predictions <- predict(final_fit, new_data = test_data) %>%
+test_predictions <- predict(wf, new_data = test_data) %>%
   mutate(.pred = pmax(0, exp(.pred) - 1))
 
 # Create Kaggle submission format (preserve original datetime strings)
@@ -146,4 +124,4 @@ kaggle_submission <- test_predictions %>%
   mutate(datetime = as.character(format(datetime)))
 
 # Write to CSV file
-vroom_write(x = kaggle_submission, file = "./BART_Predictions.csv", delim = ",")
+vroom_write(x = kaggle_submission, file = "./H2O_Predictions.csv", delim = ",")
