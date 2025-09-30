@@ -92,6 +92,17 @@ my_recipe <- recipe(count ~ . ,data = train_data) %>%
 prepped_recipe <- prep(my_recipe, training = train_data)
 
 # Bake the data
-baked_data <- bake(prepped_recipe, new_data = train_data)
+baked_data <- bake(prepped_recipe, new_data = test_data)
 
-vroom_write(x = baked_data, file = "./Baked_Data.csv", delim = ",")
+vroom_write(x = baked_data, file = "./Baked_Test_Data.csv", delim = ",")
+
+pred_data <- vroom("data/DataRobotResults.csv")
+
+kaggle_submission <- pred_data %>%
+  #bind_cols(., pred_data) %>%
+  select(datetime, count_PREDICTION) %>%
+  rename(count = count_PREDICTION) %>%
+  mutate(count = pmax(0, count)) %>%
+  mutate(datetime = as.character(format(datetime)))
+
+vroom_write(x = kaggle_submission, file = "./DataRobot_Solution.csv", delim = ",")
